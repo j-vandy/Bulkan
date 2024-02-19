@@ -12,19 +12,11 @@
 // provides EXIT_SUCCESS and EXIT_FAILURE macros
 #include <cstdlib>
 
-// creating a window specific VkSurfaceKHR
-#define VK_USE_PLATFORM_WIN32_KHR
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
-
 #ifdef NDEBUG
 const bool bEnableValidationLayers = false;
 #else
 const bool bEnableValidationLayers = true;
 #endif
-
 const char* GLFW_WINDOW_TITLE = "Vulkan";
 const int GLFW_WINDOW_WIDTH = 800;
 const int GLFW_WINDOW_HEIGHT = 600;
@@ -34,6 +26,11 @@ const char* ENGINE_NAME = "No Engine";
 // add validation layers for basic error checking
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
+};
+
+// add swapchain compatability for physical device extensions
+const std::vector<const char*> requiredPhysicalDeviceExtensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
 // callback function for debug utils messenger create info
@@ -241,6 +238,22 @@ int main()
             throw std::runtime_error("ERROR: failed to find a suitable GPU of type VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU!");
         }
 
+        // check if physical device has extension all required extensions (VK_KHR_swapchain)
+        uint32_t physicalDeviceExtensionCount;
+        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &physicalDeviceExtensionCount, nullptr);
+        std::vector <VkExtensionProperties> physicalDeviceExtensionProperties(physicalDeviceExtensionCount);
+        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &physicalDeviceExtensionCount, physicalDeviceExtensionProperties.data());
+
+        std::set<const char*> requiredExtensions(requiredPhysicalDeviceExtensions.begin(), requiredPhysicalDeviceExtensions.end());
+        for (const auto& extension : physicalDeviceExtensionProperties)
+        {
+            requiredExtensions.erase(extension.extensionName);
+        }
+        if (requiredExtensions.empty())
+        {
+            throw std::runtime_error("ERROR: physical device does not contain the extension VK_KHR_swapchain!");
+        }
+
         // get queue families properties
         uint32_t queueFamiliesCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamiliesCount, nullptr);
@@ -308,9 +321,12 @@ int main()
         deviceCreateInfo.pQueueCreateInfos = deviceQueueCreateInfos.data();
         deviceCreateInfo.pEnabledFeatures = &physicalDeviceFeatures;
         
+        // enable physical device extensions (VK_KHR_swapchain)
+        deviceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(requiredPhysicalDeviceExtensions.size());
+        deviceCreateInfo.ppEnabledExtensionNames = requiredPhysicalDeviceExtensions.data();
+
         // old versions need you to specify extensions and validation layers for the
         // instance and device separately, so we will here for compatiblity
-        deviceCreateInfo.enabledExtensionCount = 0;
         if (bEnableValidationLayers)
         {
             deviceCreateInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
