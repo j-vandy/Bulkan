@@ -529,7 +529,6 @@ int main()
         vertShaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         vertShaderModuleCreateInfo.codeSize = vertShaderBytecode.size();
         vertShaderModuleCreateInfo.pCode = reinterpret_cast<const uint32_t*>(vertShaderBytecode.data());
-
         VkShaderModule vertShaderModule;
         if (vkCreateShaderModule(device, &vertShaderModuleCreateInfo, nullptr, &vertShaderModule) != VK_SUCCESS)
         {
@@ -540,7 +539,6 @@ int main()
         fragShaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         fragShaderModuleCreateInfo.codeSize = fragShaderBytecode.size();
         fragShaderModuleCreateInfo.pCode = reinterpret_cast<const uint32_t*>(fragShaderBytecode.data());
-
         VkShaderModule fragShaderModule;
         if (vkCreateShaderModule(device, &fragShaderModuleCreateInfo, nullptr, &fragShaderModule) != VK_SUCCESS)
         {
@@ -555,6 +553,14 @@ int main()
         // clear framebuffer before drawing and store drawing data
         colorAttachmentDescription.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+        // set to don't care because the program doesn't use the stencil buffer
+        colorAttachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
+        // set final layout to present src KHR so imags can be presented in the swap chain
+        colorAttachmentDescription.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachmentDescription.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
         // create color attachment reference
         VkAttachmentReference colorAttachmentReference{};
@@ -571,7 +577,7 @@ int main()
         VkRenderPassCreateInfo renderPassCreateInfo{};
         renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
         renderPassCreateInfo.attachmentCount = 1;
-        renderPassCreateInfo.pAttachments = &colorAttachmentDescription; // TODO: this is causing an error!
+        renderPassCreateInfo.pAttachments = &colorAttachmentDescription;
         renderPassCreateInfo.subpassCount = 1;
         renderPassCreateInfo.pSubpasses = &subpassDescription;
         VkRenderPass renderPass;
@@ -579,12 +585,6 @@ int main()
         {
             throw std::runtime_error("ERROR: 'vkCreateRenderPass' failed to create a render pass!");
         }
-
-        // TODO ERROR!
-        // validation layer: Validation Error: [ VUID-VkAttachmentDescription-finalLayout-00843 ] | MessageID = 0xe5d3919f | vkCreateRenderPass(): 
-        // pCreateInfo->pAttachments[0].finalLayout is VK_IMAGE_LAYOUT_UNDEFINED. The Vulkan spec states: finalLayout must not be 
-        // VK_IMAGE_LAYOUT_UNDEFINED or VK_IMAGE_LAYOUT_PREINITIALIZED 
-        // (https://vulkan.lunarg.com/doc/view/1.3.275.0/windows/1.3-extensions/vkspec.html#VUID-VkAttachmentDescription-finalLayout-00843)
 
         // assign shader modules to a specific pipeline stage
         VkPipelineShaderStageCreateInfo vertPipelineShaderStageCreateInfo{};
@@ -595,7 +595,7 @@ int main()
 
         VkPipelineShaderStageCreateInfo fragPipelineShaderStageCreateInfo{};
         fragPipelineShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        fragPipelineShaderStageCreateInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        fragPipelineShaderStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
         fragPipelineShaderStageCreateInfo.module = fragShaderModule;
         fragPipelineShaderStageCreateInfo.pName = "main";
 
@@ -741,6 +741,7 @@ int main()
         graphicsPipelineCreateInfo.stageCount = 2;
         graphicsPipelineCreateInfo.pStages = pipelineShaderStageCreateInfos;
         graphicsPipelineCreateInfo.pVertexInputState = &pipelineVertexInputStateCreateInfo;
+        graphicsPipelineCreateInfo.pInputAssemblyState = &pipelineInputAssemblyStateCreateInfo;
         graphicsPipelineCreateInfo.pViewportState = &pipelineViewportStateCreateInfo;
         graphicsPipelineCreateInfo.pRasterizationState = &pipelineRasterizationStateCreateInfo;
         graphicsPipelineCreateInfo.pMultisampleState = &pipelineMultisampleStateCreateInfo;
@@ -759,12 +760,6 @@ int main()
         {
             throw std::runtime_error("ERROR: 'vkCreateGraphicsPipelines' failed to create a graphics pipeline!");
         }
-
-        // fix the fucking errors please!
-        // validation layer : Validation Error : [VUID-VkAttachmentDescription-finalLayout-00843] | MessageID = 0xe5d3919f | vkCreateRenderPass(): pCreateInfo->pAttachments[0].finalLayout is VK_IMAGE_LAYOUT_UNDEFINED. The Vulkan spec states: finalLayout must not be VK_IMAGE_LAYOUT_UNDEFINED or VK_IMAGE_LAYOUT_PREINITIALIZED (https://vulkan.lunarg.com/doc/view/1.3.275.0/windows/1.3-extensions/vkspec.html#VUID-VkAttachmentDescription-finalLayout-00843)
-        // validation layer : Validation Error : [VUID - VkPipelineShaderStageCreateInfo - pName - 00707] | MessageID = 0xb38b9761 | vkCreateGraphicsPipelines() : pCreateInfos[0].pStages[1].pName `main` entrypoint not found for stage VK_SHADER_STAGE_VERTEX_BIT.The Vulkan spec states : pName must be the name of an OpEntryPoint in module with an execution model that matches stage(https ://vulkan.lunarg.com/doc/view/1.3.275.0/windows/1.3-extensions/vkspec.html#VUID-VkPipelineShaderStageCreateInfo-pName-00707)
-        // validation layer : Validation Error : [VUID - VkGraphicsPipelineCreateInfo - stage - 06897] | MessageID = 0x4e21c9cb | vkCreateGraphicsPipelines() : pCreateInfos[0].pStages[1] and pStages[0] both have VK_SHADER_STAGE_VERTEX_BIT.The Vulkan spec states : If the pipeline requires fragment shader state and /or pre - rasterization shader state, any value of stage must not be set in more than one element of pStages(https ://vulkan.lunarg.com/doc/view/1.3.275.0/windows/1.3-extensions/vkspec.html#VUID-VkGraphicsPipelineCreateInfo-stage-06897)
-        // validation layer : Validation Error : [VUID - VkGraphicsPipelineCreateInfo - dynamicPrimitiveTopologyUnrestricted - 09031] | MessageID = 0x7a7fcfd3 | vkCreateGraphicsPipelines() : pCreateInfos[0].pInputAssemblyState is NULL.The Vulkan spec states : If the pipeline requires vertex input state, and the VK_EXT_extended_dynamic_state3 extension is not enabled, or either VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE, or VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY dynamic states are not set, or dynamicPrimitiveTopologyUnrestricted is VK_FALSE, pInputAssemblyState must be a valid pointer to a valid VkPipelineInputAssemblyStateCreateInfo structure(https ://vulkan.lunarg.com/doc/view/1.3.275.0/windows/1.3-extensions/vkspec.html#VUID-VkGraphicsPipelineCreateInfo-dynamicPrimitiveTopologyUnrestricted-09031)
 
         // main loop
         while (!glfwWindowShouldClose(window))
