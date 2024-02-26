@@ -573,6 +573,15 @@ int main()
         subpassDescription.colorAttachmentCount = 1;
         subpassDescription.pColorAttachments = &colorAttachmentReference;
 
+        // create a subpass dependency
+        VkSubpassDependency subpassDependency{};
+        subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        subpassDependency.dstSubpass = 0;
+
+        // specify what operations should wait to be performed
+        subpassDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpassDependency.srcAccessMask = 0;
+
         // create render pass
         VkRenderPassCreateInfo renderPassCreateInfo{};
         renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -580,6 +589,8 @@ int main()
         renderPassCreateInfo.pAttachments = &colorAttachmentDescription;
         renderPassCreateInfo.subpassCount = 1;
         renderPassCreateInfo.pSubpasses = &subpassDescription;
+        renderPassCreateInfo.dependencyCount = 0;
+        renderPassCreateInfo.pDependencies = &subpassDependency;
         VkRenderPass renderPass;
         if (vkCreateRenderPass(device, &renderPassCreateInfo, nullptr, &renderPass) != VK_SUCCESS)
         {
@@ -634,8 +645,8 @@ int main()
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = (float)swapchainExtent.width;
-        viewport.height = (float)swapchainExtent.height;
+        viewport.width = static_cast<float>(swapchainExtent.width);
+        viewport.height = static_cast<float>(swapchainExtent.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
 
@@ -700,13 +711,6 @@ int main()
         pipelineColorBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; // optional
         pipelineColorBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; // optional
         pipelineColorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD; // optional
-        //pipelineColorBlendAttachmentState.blendEnable = VK_TRUE;
-        //pipelineColorBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        //pipelineColorBlendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        //pipelineColorBlendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
-        //pipelineColorBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        //pipelineColorBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-        //pipelineColorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
 
         // create a pipeline color blend state create info to assign the color blend attachment state
         VkPipelineColorBlendStateCreateInfo pipelineColorBlendStateCreateInfo{};
@@ -761,15 +765,185 @@ int main()
             throw std::runtime_error("ERROR: 'vkCreateGraphicsPipelines' failed to create a graphics pipeline!");
         }
 
+        // wrap all of the VkImageViews into a frame buffer
+        std::vector<VkFramebuffer> swapchainFramebuffers(swapchainImageViews.size());
+        for (size_t i = 0; i < swapchainImageViews.size(); i++)
+        {
+            VkImageView attachments[] = {
+                swapchainImageViews[i]
+            };
+
+            VkFramebufferCreateInfo framebufferCreateInfo{};
+            framebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            framebufferCreateInfo.renderPass = renderPass;
+            framebufferCreateInfo.attachmentCount = 1;
+            framebufferCreateInfo.pAttachments = attachments;
+            framebufferCreateInfo.width = swapchainExtent.width;
+            framebufferCreateInfo.height = swapchainExtent.height;
+            framebufferCreateInfo.layers = 1;
+
+            if (vkCreateFramebuffer(device, &framebufferCreateInfo, nullptr, &swapchainFramebuffers[i]) != VK_SUCCESS)
+            {
+				throw std::runtime_error("ERROR: 'vkCreateFramebuffer' failed to create a framebuffer!");
+            }
+        }
+
+        // create a command pool for the command buffer
+        VkCommandPoolCreateInfo commandPoolCreateInfo{};
+        commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+
+        // set flag to 'reset command buffer' as we want to rerecord over it every frame
+        commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        commandPoolCreateInfo.queueFamilyIndex = graphicsQueueFamilyIndice.value();
+        VkCommandPool commandPool;
+        if (vkCreateCommandPool(device, &commandPoolCreateInfo, nullptr, &commandPool) != VK_SUCCESS)
+        {
+			throw std::runtime_error("ERROR: 'vkCreateCommandPool' failed to create a command pool!");
+        }
+        
+        // create a command buffer to record all (drawing/memory) operations you want to preform
+        VkCommandBufferAllocateInfo commandBufferAllocateInfo{};
+        commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        commandBufferAllocateInfo.commandPool = commandPool;
+
+        // primary can be submitted to a queue for execution, but cannot be called from other command buffers
+        // secondary cannot be submitted directly, but can be called from primary command buffers
+        commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        commandBufferAllocateInfo.commandBufferCount = 1;
+        VkCommandBuffer commandBuffer;
+        if (vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffer) != VK_SUCCESS)
+        {
+			throw std::runtime_error("ERROR: 'vkAllocateCommandBuffers' failed to allocate command buffers!");
+        }
+
+        // create semaphore (GPU synchronization object) to signal when an image has been aquired
+        // from the swapchain and is ready for rendering
+        VkSemaphoreCreateInfo semaphoreCreateInfo{};
+        semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		VkSemaphore imageAvailableSemaphore;
+        if (vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS)
+        {
+            throw std::runtime_error("ERROR: 'vkCreateSemaphore' failed to create 'imageAvailableSemaphore'!");
+        }
+
+        // create semaphore (GPU synchronization object) to signal that rendering is finished and
+        // presentation can occur
+        VkSemaphore renderFinishedSemaphore;
+        if (vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS)
+        {
+            throw std::runtime_error("ERROR: 'vkCreateSemaphore' failed to create 'renderFinishedSemaphore'!");
+        }
+
+        // create fence (CPU synchronization object) to make sure only one frame is rendered at a time
+        VkFenceCreateInfo fenceCreateInfo{};
+        fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+        VkFence inFlightFence;
+        if (vkCreateFence(device, &fenceCreateInfo, nullptr, &inFlightFence) != VK_SUCCESS)
+        {
+            throw std::runtime_error("ERROR: 'vkCreateFence' failed to create 'inFlightFence'!");
+        }
+
         // main loop
         while (!glfwWindowShouldClose(window))
         {
-
             // determines if user wants to close the window
             glfwPollEvents();
+
+            // wait for fence to be signaled
+            vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+            vkResetFences(device, 1, &inFlightFence);
+
+            // aquire the image from the swapchain to render
+            uint32_t imageIndex;
+            vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+            
+            // record the command buffer
+            vkResetCommandBuffer(commandBuffer, 0);
+            
+			// create a command buffer begin info to write the commands to execute into a command bufer
+			VkCommandBufferBeginInfo commandBufferBeginInfo{};
+			commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+			commandBufferBeginInfo.flags = 0; // optional
+			commandBufferBeginInfo.pInheritanceInfo = nullptr; // optional
+			if (vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo) != VK_SUCCESS)
+			{
+				throw std::runtime_error("ERROR: 'vkBeginCommandBuffer' failed to begin a command buffer!");
+			}
+
+			// create a render pass begin info to start the render pass to begin drawing
+			VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+			VkRenderPassBeginInfo renderPassBeginInfo{};
+			renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+			renderPassBeginInfo.renderPass = renderPass;
+			renderPassBeginInfo.framebuffer = swapchainFramebuffers[imageIndex];
+			renderPassBeginInfo.renderArea.offset = { 0, 0 };
+			renderPassBeginInfo.renderArea.extent = swapchainExtent;
+			renderPassBeginInfo.clearValueCount = 1;
+			renderPassBeginInfo.pClearValues = &clearColor;
+			vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+			// bind the graphics pipeline
+			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+			// set the viewport and scissor state in the command buffer since we set them to be
+			// dynamic in the pipeline
+			vkCmdSetViewport(commandBuffer, 0, 1, &viewport); // TODO: if this errors then bring in the viewport and scissor creation
+			vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+            // draw and end commands
+			vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+			vkCmdEndRenderPass(commandBuffer);
+			if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
+			{
+				throw std::runtime_error("ERROR: 'vkEndCommandBuffer' failed to end command buffer!");
+			}
+
+            // create a queue submission
+            VkSemaphore waitSemaphores[] = { imageAvailableSemaphore };
+            VkPipelineStageFlags pipelineStageFlags[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+            VkSemaphore signalSemaphores[] = { renderFinishedSemaphore };
+            VkSubmitInfo submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.waitSemaphoreCount = 1;
+            submitInfo.pWaitSemaphores = waitSemaphores;
+            submitInfo.pWaitDstStageMask = pipelineStageFlags;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &commandBuffer;
+            submitInfo.signalSemaphoreCount = 1;
+            submitInfo.pSignalSemaphores = signalSemaphores;
+
+            // submit the command buffer to the graphics queue
+            if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS)
+            {
+				throw std::runtime_error("ERROR: 'vkQueueSubmit' failed to submit a queue!");
+            }
+
+            // submit a request to present an image to the swapchain
+            VkSwapchainKHR swapchains[] = { swapchain };
+            VkPresentInfoKHR presentInfo{};
+            presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+            presentInfo.waitSemaphoreCount = 1;
+            presentInfo.pWaitSemaphores = signalSemaphores;
+            presentInfo.swapchainCount = 1;
+            presentInfo.pSwapchains = swapchains;
+            presentInfo.pImageIndices = &imageIndex;
+            presentInfo.pResults = nullptr; // optional
+            vkQueuePresentKHR(presentQueue, &presentInfo);
         }
 
+        // wait for the logical device to finish operations before cleanup
+        vkDeviceWaitIdle(device);
+
         // cleanup allocated resources
+        vkDestroyFence(device, inFlightFence, nullptr);
+        vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+        vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+        vkDestroyCommandPool(device, commandPool, nullptr);
+        for (auto framebuffer : swapchainFramebuffers)
+        {
+            vkDestroyFramebuffer(device, framebuffer, nullptr);
+        }
         vkDestroyPipeline(device, graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         vkDestroyRenderPass(device, renderPass, nullptr);
