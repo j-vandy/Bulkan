@@ -244,7 +244,26 @@ int main()
             throw std::runtime_error("ERROR: failed to find a suitable GPU of type VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU!");
         }
 
+        // check if physical device has VK_KHR_swapchain extension
+        uint32_t physicalDeviceExtensionCount;
+        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &physicalDeviceExtensionCount, nullptr);
+        std::vector <VkExtensionProperties> physicalDeviceExtensionProperties(physicalDeviceExtensionCount);
+        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &physicalDeviceExtensionCount, physicalDeviceExtensionProperties.data());
 
+        // add swapchain compatability to physical device extensions
+        const std::vector<const char*> requiredPhysicalDeviceExtensions = {
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        };
+
+        std::set<const char*> requiredExtensions(requiredPhysicalDeviceExtensions.begin(), requiredPhysicalDeviceExtensions.end());
+        for (const auto& extension : physicalDeviceExtensionProperties)
+        {
+            requiredExtensions.erase(extension.extensionName);
+        }
+        if (requiredExtensions.empty())
+        {
+            throw std::runtime_error("ERROR: physical device does not contain the extension VK_KHR_swapchain!");
+        }
 
         // get queue families properties
         uint32_t queueFamiliesCount = 0;
@@ -312,11 +331,6 @@ int main()
         deviceCreateInfo.pQueueCreateInfos = deviceQueueCreateInfos.data();
         deviceCreateInfo.pEnabledFeatures = &physicalDeviceFeatures;
 
-        // add swapchain compatability for physical device extensions
-        const std::vector<const char*> requiredPhysicalDeviceExtensions = {
-            VK_KHR_SWAPCHAIN_EXTENSION_NAME
-        };
-
         // enable physical device extensions (VK_KHR_swapchain)
         deviceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(requiredPhysicalDeviceExtensions.size());
         deviceCreateInfo.ppEnabledExtensionNames = requiredPhysicalDeviceExtensions.data();
@@ -346,21 +360,6 @@ int main()
         vkGetDeviceQueue(device, graphicsQueueFamilyIndice.value(), 0, &graphicsQueue);
         vkGetDeviceQueue(device, presentQueueFamilyIndice.value(), 0, &presentQueue);
 
-        // check if physical device has VK_KHR_swapchain extension
-        uint32_t physicalDeviceExtensionCount;
-        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &physicalDeviceExtensionCount, nullptr);
-        std::vector <VkExtensionProperties> physicalDeviceExtensionProperties(physicalDeviceExtensionCount);
-        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &physicalDeviceExtensionCount, physicalDeviceExtensionProperties.data());
-
-        std::set<const char*> requiredExtensions(requiredPhysicalDeviceExtensions.begin(), requiredPhysicalDeviceExtensions.end());
-        for (const auto& extension : physicalDeviceExtensionProperties)
-        {
-            requiredExtensions.erase(extension.extensionName);
-        }
-        if (requiredExtensions.empty())
-        {
-            throw std::runtime_error("ERROR: physical device does not contain the extension VK_KHR_swapchain!");
-        }
 
         // query the surface formats for a format that supports VK_FORMAT_B8G8R8A8_SRGB & VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
         uint32_t surfaceFormatCount;
@@ -562,12 +561,10 @@ int main()
         subpassDescription.colorAttachmentCount = 1;
         subpassDescription.pColorAttachments = &colorAttachmentReference;
 
-        // create a subpass dependency
+        // create subpass dependency to specify what operations should wait to be performed
         VkSubpassDependency subpassDependency{};
         subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
         subpassDependency.dstSubpass = 0;
-
-        // specify what operations should wait to be performed
         subpassDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         subpassDependency.srcAccessMask = 0;
 
@@ -601,18 +598,16 @@ int main()
 
         VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfos[] = { vertPipelineShaderStageCreateInfo, fragPipelineShaderStageCreateInfo };
 
-        // create dynamic states for viewport resizing in the pipeline making 
-        // the viewport and scissor rect dynamic does NOT effect performance
+        // create dynamic states for viewport resizing in the pipeline (making 
+        // the viewport and scissor rect dynamic does NOT effect performance)
         std::vector<VkDynamicState> dynamicStates = {
             VK_DYNAMIC_STATE_VIEWPORT,
             VK_DYNAMIC_STATE_SCISSOR
         };
-
         VkPipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo{};
         pipelineDynamicStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
         pipelineDynamicStateCreateInfo.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         pipelineDynamicStateCreateInfo.pDynamicStates = dynamicStates.data();
-
 
         // create vertex input state to describe the vertex data format
         VkPipelineVertexInputStateCreateInfo pipelineVertexInputStateCreateInfo{};
@@ -630,20 +625,6 @@ int main()
         // setting to VK_TRUE allows you to break up lines and triangles in *_STRIP
         pipelineInputAssemblyStateCreateInfo.primitiveRestartEnable = VK_FALSE;
 
-        // viewport describes the region of the framebuffer that the output will render to
-        VkViewport viewport{};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = static_cast<float>(swapchainExtent.width);
-        viewport.height = static_cast<float>(swapchainExtent.height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-
-        // scissor rectangle acts like a clipping mask
-        VkRect2D scissor{};
-        scissor.offset = { 0, 0 };
-        scissor.extent = swapchainExtent;
-
         // populate pipeline viewport state create info
         VkPipelineViewportStateCreateInfo pipelineViewportStateCreateInfo{};
         pipelineViewportStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -657,19 +638,18 @@ int main()
         // set VK_FALSE so frags outside of near/far clip planes get discarded
         pipelineRasterizationStateCreateInfo.depthClampEnable = VK_FALSE;
 
-        // disabled so geometry is passed through the rasterizater stage
+        // disabled so geometry is passed through the rasterization stage
         pipelineRasterizationStateCreateInfo.rasterizerDiscardEnable = VK_FALSE;
 
         // specify geometry (point, line, triangle)
         pipelineRasterizationStateCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
-
         pipelineRasterizationStateCreateInfo.lineWidth = 1.0f;
 
         // enables face culling and specifies vertex order (can be either cw/ccw)
         pipelineRasterizationStateCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
         pipelineRasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
 
-        // used to alter depth values (sometimes used for shadow mapping)
+        // alters depth values (sometimes used for shadow mapping)
         pipelineRasterizationStateCreateInfo.depthBiasClamp = VK_FALSE;
         pipelineRasterizationStateCreateInfo.depthBiasConstantFactor = 0.0f; // optional
         pipelineRasterizationStateCreateInfo.depthBiasClamp = 0.0f; // optional
@@ -833,6 +813,20 @@ int main()
             throw std::runtime_error("ERROR: 'vkCreateFence' failed to create 'inFlightFence'!");
         }
 
+        // viewport describes the region of the framebuffer that the output will render to
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(swapchainExtent.width);
+        viewport.height = static_cast<float>(swapchainExtent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+
+        // scissor rectangle acts like a clipping mask
+        VkRect2D scissor{};
+        scissor.offset = { 0, 0 };
+        scissor.extent = swapchainExtent;
+
         // main loop
         while (!glfwWindowShouldClose(window))
         {
@@ -847,7 +841,7 @@ int main()
             uint32_t imageIndex;
             vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
             
-            // record the command buffer
+            // reset the command buffer
             vkResetCommandBuffer(commandBuffer, 0);
             
 			// create a command buffer begin info to write the commands to execute into a command bufer
@@ -877,7 +871,7 @@ int main()
 
 			// set the viewport and scissor state in the command buffer since we set them to be
 			// dynamic in the pipeline
-			vkCmdSetViewport(commandBuffer, 0, 1, &viewport); // TODO: if this errors then bring in the viewport and scissor creation
+			vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 			vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
             // draw and end commands
