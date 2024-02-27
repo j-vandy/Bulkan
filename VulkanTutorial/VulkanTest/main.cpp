@@ -6,15 +6,9 @@
 #include <optional>
 #include <limits>
 #include <algorithm>
-
-// used for reporting errors
 #include <iostream>
 #include <stdexcept>
-
-// provides EXIT_SUCCESS and EXIT_FAILURE macros
 #include <cstdlib>
-
-// to read the *.spv binary shader files
 #include <fstream>
 
 #ifdef NDEBUG
@@ -81,22 +75,21 @@ int main()
         // initializes GLFW library
         glfwInit();
 
-        // tell glfw that we aren't using OpenGL
+        // specify we aren't using OpenGL
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-        // turn of window resize because thats hard to do
+        // turn off window resize
         glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-        // window titled Vulkan
+        // create a window titled Vulkan
         GLFWwindow* window = glfwCreateWindow(GLFW_WINDOW_WIDTH, GLFW_WINDOW_HEIGHT, GLFW_WINDOW_TITLE, nullptr, nullptr);
 
-        // add validation layers for basic error checking
+        // validation layers for basic error checking
         const std::vector<const char*> validationLayers = {
             "VK_LAYER_KHRONOS_validation"
         };
 
-        // init vulkan
-        // determine if the validation layers are in the instance layer properties
+        // check if the validation layers exit in the instance's layer properties
         if (bEnableValidationLayers)
         {
             uint32_t layerCount;
@@ -123,10 +116,9 @@ int main()
             }
         }
 
-        // populate application info to populate instance create info for the vulkan instance
-        // constructor
+        // populate application info & instance info for the vulkan instance
         VkApplicationInfo appInfo{};
-        appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO; // sType format: VK_STRUCTURE_TYPE_...
+        appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         appInfo.pApplicationName = APPLICATION_NAME;
         appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
         appInfo.pEngineName = ENGINE_NAME;
@@ -137,8 +129,7 @@ int main()
         instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         instanceCreateInfo.pApplicationInfo = &appInfo;
 
-        // set the extension info in the instance create info
-        // add a debug messenger to extensions so callback can handle messages 
+        // enable the GLFW extensions & debug extensions on the vk instance
         uint32_t glfwExtensionCount = 0;
         const char** glfwExtensions;
         glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
@@ -150,8 +141,8 @@ int main()
         instanceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size());
         instanceCreateInfo.ppEnabledExtensionNames = instanceExtensions.data();
 
-        // set validation layers in the instance create info & create a debug messenger
-        // to enable debuging on instance creation and deletion processes
+        // set validation layers & create a debug messenger to enable debuging on
+        // instance creation/deletion
         VkDebugUtilsMessengerCreateInfoEXT debugMsgrCreateInfo{};
         if (bEnableValidationLayers)
         {
@@ -178,14 +169,10 @@ int main()
             throw std::runtime_error("ERROR: 'vkCreateInstance()' failed to create an instance!");
         }
 
-        // for incompatible driver & extension support 
-        // see https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Instance 
-
-        // init debug messenger
+		// populate debug utils messenger create info with callback function for constructor
         VkDebugUtilsMessengerEXT debugMessenger;
         if (bEnableValidationLayers)
         {
-            // populate debug utils messenger create info with callback function for constructor
             VkDebugUtilsMessengerCreateInfoEXT debugUtilsMsgrCreateInfo{};
             debugUtilsMsgrCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
             debugUtilsMsgrCreateInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
@@ -215,7 +202,7 @@ int main()
             throw std::runtime_error("ERROR: 'vkEnumeratePhysicalDevices()' failed to find a GPU with Vulkan support!");
         }
 
-        // order the physical devices in order of suitability
+        // order the physical devices by their suitability
         std::vector<VkPhysicalDevice> physicalDevices(deviceCount);
         vkEnumeratePhysicalDevices(instance, &deviceCount, physicalDevices.data());
         std::multimap<int, VkPhysicalDevice> physicalDeviceCanidates;
@@ -235,6 +222,7 @@ int main()
                 continue;
             }
 
+            // is a dedicated GPU
             if (physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
             {
                 score += 1000;
@@ -255,6 +243,8 @@ int main()
         {
             throw std::runtime_error("ERROR: failed to find a suitable GPU of type VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU!");
         }
+
+
 
         // get queue families properties
         uint32_t queueFamiliesCount = 0;
@@ -313,7 +303,6 @@ int main()
         }
 
         // specify device features we queried for using vkGetPhysicalDeviceFeatures
-        // and add it to device create info
         VkPhysicalDeviceFeatures physicalDeviceFeatures{};
 
         // populate device create info with device queue create infos
