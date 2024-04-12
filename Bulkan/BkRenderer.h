@@ -2,6 +2,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vector>
+#include <optional>
 
 class BkRenderer
 {
@@ -39,8 +40,6 @@ private:
 	std::vector<VkImage> swapchainImages;
 	std::vector<VkImageView> swapchainImageViews;
 
-	VkShaderModule vertShaderModule;
-	VkShaderModule fragShaderModule;
 	VkRenderPass renderPass;
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
@@ -55,9 +54,19 @@ private:
 	std::vector<VkFence> inFlightFences;
 	uint32_t currentFrame = 0;
 
-	bool bFrameBufferResized = false;
+	void findQueueFamiliesIndex(std::optional<uint32_t>& graphicsQueueFamilyIndex, std::optional<uint32_t>& presentQueueFamilyIndex);
+
+	void createSwapchainAndImageViews(std::optional<uint32_t>& graphicsQueueFamilyIndex, std::optional<uint32_t>& presentQueueFamilyIndex);
+
+	void createSwapchainFramebuffer();
+
+	void cleanupSwapchain();
+
+	void recreateSwapchain();
 
 public:
+	bool bFramebufferResized = false;
+
 	// TODO: probably need to allow title, width, height, application name
 	// TODO: add good comments for BkRenderer and render method
 	BkRenderer();
