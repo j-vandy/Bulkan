@@ -5,6 +5,43 @@
 #include <set>
 #include <algorithm>
 
+#include <glm/glm.hpp>
+#include <array>
+
+struct Vertex {
+	glm::vec2 pos;
+	glm::vec3 color;
+
+	// tell vulkan how to pass the data format to the vertex shader once
+	// in GPU memory
+	static VkVertexInputBindingDescription getVertexInputBindingDescription()
+	{
+		VkVertexInputBindingDescription bindingDescription{};
+		bindingDescription.binding = 0;
+		bindingDescription.stride = sizeof(Vertex);
+		bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+		return bindingDescription;
+	}
+
+	static std::array<VkVertexInputAttributeDescription, 2> getVertexInputAttributeDescriptions() {
+		std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+		attributeDescriptions[0].binding = 0;
+		attributeDescriptions[0].location = 0;
+		attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+		attributeDescriptions[0].offset = offsetof(Vertex, pos);
+		attributeDescriptions[1].binding = 0;
+		attributeDescriptions[1].location = 1;
+		attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+		attributeDescriptions[1].offset = offsetof(Vertex, color);
+		return attributeDescriptions;
+	}
+};
+const std::vector<Vertex> vertices = { // interleaving vertex attributes
+	{{0.0f, -0.5f}, {1.0f,1.0f,1.0f}},
+	{{0.5f, 0.5f}, {0.0f,1.0f,0.0f}},
+	{{-0.5f, 0.5f}, {0.0f,0.0f,1.0f}}
+};
+
 #ifdef NDEBUG
 const bool bEnableValidationLayers = false;
 #else
@@ -671,12 +708,15 @@ BkRenderer::BkRenderer()
 	pipelineDynamicStateCreateInfo.pDynamicStates = dynamicStates.data();
 
 	// create vertex input state to describe the vertex data format
+	VkVertexInputBindingDescription vertexInputBindingDescription = Vertex::getVertexInputBindingDescription();
+	std::array<VkVertexInputAttributeDescription,2> vertexInputAttributeDescription = Vertex::getVertexInputAttributeDescriptions();
+
 	VkPipelineVertexInputStateCreateInfo pipelineVertexInputStateCreateInfo{};
 	pipelineVertexInputStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	pipelineVertexInputStateCreateInfo.vertexBindingDescriptionCount = 0;
-	pipelineVertexInputStateCreateInfo.pVertexBindingDescriptions = nullptr; // optional
-	pipelineVertexInputStateCreateInfo.vertexAttributeDescriptionCount = 0;
-	pipelineVertexInputStateCreateInfo.pVertexAttributeDescriptions = nullptr; // optional
+	pipelineVertexInputStateCreateInfo.vertexBindingDescriptionCount = 1;
+	pipelineVertexInputStateCreateInfo.pVertexBindingDescriptions = &vertexInputBindingDescription; // optional
+	pipelineVertexInputStateCreateInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributeDescription.size());
+	pipelineVertexInputStateCreateInfo.pVertexAttributeDescriptions = vertexInputAttributeDescription.data(); // optional
 
 	// create input assembly state to describe the type of geometry being drawn
 	// (points, lines, triangles)
@@ -832,6 +872,66 @@ BkRenderer::BkRenderer()
 			throw std::runtime_error("ERROR: 'vkAllocateCommandBuffers' failed to allocate command buffers!");
 		}
 	}
+	
+	// create a buffer to store vertex data on GPU by specifying its usage
+	VkBufferCreateInfo bufferCreateInfo{};
+	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferCreateInfo.size = sizeof(vertices[0]) * vertices.size();
+	bufferCreateInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+
+	// buffers can be owned by a specific queue family like in swapchain images
+	// set mode to exclusive because only the graphics queue will use it
+	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &vertexBuffer) != VK_SUCCESS)
+	{
+		throw std::runtime_error("ERROR: 'vkCreateBuffer' failed to create the vertex buffer!");
+	}
+
+	// assign memory to the created buffer
+	VkMemoryRequirements memoryRequirements;
+	vkGetBufferMemoryRequirements(device, vertexBuffer, &memoryRequirements);
+	
+	// determine the best type of memory to allocate based on the requirements
+	VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &physicalDeviceMemoryProperties);
+	bool bFoundMemoryType = false;
+	VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	uint32_t memoryTypeIndex;
+	for (uint32_t i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; i++)
+	{
+		if ((memoryRequirements.memoryTypeBits & (1 << i)) && (physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
+		{
+			memoryTypeIndex = i;
+			bFoundMemoryType = true;
+			break;
+		}
+	}
+	if (!bFoundMemoryType)
+	{
+		throw std::runtime_error("ERROR: failed to find suitable memory type for vertex buffer!");
+	}
+
+	// create memory allocate info
+	VkMemoryAllocateInfo memoryAllocateInfo{};
+	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	memoryAllocateInfo.allocationSize = memoryRequirements.size;
+	memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
+
+	// create vertex buffer device memory
+	if (vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &vertexBufferDeviceMemory) != VK_SUCCESS)
+	{
+		throw std::runtime_error("ERROR: 'vkAllocateMemory' failed to create device memory for vertex buffer!");
+	}
+
+	// bind the allocated memory with the vertex buffer
+	vkBindBufferMemory(device, vertexBuffer, vertexBufferDeviceMemory, 0);
+
+	// copy the vertex data to the buffer
+	void* data;
+	vkMapMemory(device, vertexBufferDeviceMemory, 0, bufferCreateInfo.size, 0, &data);
+	memcpy(data, vertices.data(), (size_t)bufferCreateInfo.size);
+	vkUnmapMemory(device, vertexBufferDeviceMemory);
+
 
 	// create a semaphore (GPU synchronization object) for each frame in flight
 	// to signal when an image has been aquired from the swapchain and is ready
@@ -939,11 +1039,16 @@ void BkRenderer::render()
 
 		// bind the graphics pipeline
 		vkCmdBindPipeline(commandBuffers[currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-
-		// set the viewport and scissor state in the command buffer since we set them to be
-		// dynamic in the pipeline
+	
+		// set the viewport and scissor state in the command buffer since we set
+		// them to be dynamic in the pipeline
 		vkCmdSetViewport(commandBuffers[currentFrame], 0, 1, &viewport);
 		vkCmdSetScissor(commandBuffers[currentFrame], 0, 1, &scissor);
+
+		// bind the vertex buffers
+		VkBuffer vertexBuffers[] = { vertexBuffer };
+		VkDeviceSize offsets[] = { 0 };
+		vkCmdBindVertexBuffers(commandBuffers[currentFrame], 0, 1, vertexBuffers, offsets);
 
 		// draw and end commands
 		vkCmdDraw(commandBuffers[currentFrame], 3, 1, 0, 0);
@@ -1009,6 +1114,8 @@ void BkRenderer::render()
 		vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
 		vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
 	}
+	vkDestroyBuffer(device, vertexBuffer, nullptr);
+	vkFreeMemory(device, vertexBufferDeviceMemory, nullptr);
 	vkDestroyCommandPool(device, commandPool, nullptr);
 	vkDestroyPipeline(device, graphicsPipeline, nullptr);
 	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);

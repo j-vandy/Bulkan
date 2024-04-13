@@ -49,6 +49,9 @@ private:
 	VkCommandPool commandPool;
 	std::vector<VkCommandBuffer> commandBuffers;
 
+	VkBuffer vertexBuffer;
+	VkDeviceMemory vertexBufferDeviceMemory;
+
 	std::vector<VkSemaphore> imageAvailableSemaphores;
 	std::vector<VkSemaphore> renderFinishedSemaphores;
 	std::vector<VkFence> inFlightFences;
