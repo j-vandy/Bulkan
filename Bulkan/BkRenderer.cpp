@@ -37,7 +37,7 @@ struct Vertex {
 	}
 };
 const std::vector<Vertex> vertices = { // interleaving vertex attributes
-	{{0.0f, -0.5f}, {1.0f,1.0f,1.0f}},
+	{{0.0f, -0.5f}, {1.0f,0.0f,0.0f}},
 	{{0.5f, 0.5f}, {0.0f,1.0f,0.0f}},
 	{{-0.5f, 0.5f}, {0.0f,0.0f,1.0f}}
 };
@@ -355,6 +355,66 @@ void BkRenderer::recreateSwapchain()
 	findQueueFamiliesIndex(graphicsQueueFamilyIndex, presentQueueFamilyIndex);
 	createSwapchainAndImageViews(graphicsQueueFamilyIndex, presentQueueFamilyIndex);
 	createSwapchainFramebuffer();
+}
+
+void BkRenderer::createBuffer(VkDeviceSize deviceSize, VkBufferUsageFlags bufferUsageFlags, VkMemoryPropertyFlags memoryPropertyFlags, VkBuffer& buffer, VkDeviceMemory& bufferDeviceMemory)
+{
+	// create a buffer to store vertex data on GPU by specifying its usage
+	VkBufferCreateInfo bufferCreateInfo{};
+	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferCreateInfo.size = deviceSize;
+	bufferCreateInfo.usage = bufferUsageFlags;
+
+	// buffers can be owned by a specific queue family like in swapchain images
+	// set mode to exclusive because only the graphics queue will use it
+	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &buffer) != VK_SUCCESS)
+	{
+		throw std::runtime_error("ERROR: 'vkCreateBuffer' failed to create the vertex buffer!");
+	}
+
+	// assign memory to the created buffer
+	VkMemoryRequirements memoryRequirements;
+	vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
+	
+	// determine the best type of memory to allocate based on the requirements
+	VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &physicalDeviceMemoryProperties);
+
+	uint32_t memoryTypeIndex;
+	bool bFoundMemoryType = false;
+	for (uint32_t i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; i++)
+	{
+		if ((memoryRequirements.memoryTypeBits & (1 << i)) && (physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
+		{
+			memoryTypeIndex = i;
+			bFoundMemoryType = true;
+			break;
+		}
+	}
+	if (!bFoundMemoryType)
+	{
+		throw std::runtime_error("ERROR: failed to find suitable memory type for vertex buffer!");
+	}
+
+	// create memory allocate info
+	VkMemoryAllocateInfo memoryAllocateInfo{};
+	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	memoryAllocateInfo.allocationSize = memoryRequirements.size;
+	memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
+
+	// create buffer device memory
+	// IMPORTANT SIDE NOTE: real world applications dont call vkAllocateMemory
+	// for every individual buffer, instead create a custom allocator that
+	// splits up a single allocation among many different objects by using the
+	// 'offset' parameter.
+	if (vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &bufferDeviceMemory) != VK_SUCCESS)
+	{
+		throw std::runtime_error("ERROR: 'vkAllocateMemory' failed to create device memory for vertex buffer!");
+	}
+
+	// bind the allocated memory with the vertex buffer
+	vkBindBufferMemory(device, buffer, bufferDeviceMemory, 0);
 }
 
 BkRenderer::BkRenderer()
@@ -872,66 +932,66 @@ BkRenderer::BkRenderer()
 			throw std::runtime_error("ERROR: 'vkAllocateCommandBuffers' failed to allocate command buffers!");
 		}
 	}
-	
-	// create a buffer to store vertex data on GPU by specifying its usage
-	VkBufferCreateInfo bufferCreateInfo{};
-	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferCreateInfo.size = sizeof(vertices[0]) * vertices.size();
-	bufferCreateInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 
-	// buffers can be owned by a specific queue family like in swapchain images
-	// set mode to exclusive because only the graphics queue will use it
-	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &vertexBuffer) != VK_SUCCESS)
-	{
-		throw std::runtime_error("ERROR: 'vkCreateBuffer' failed to create the vertex buffer!");
-	}
-
-	// assign memory to the created buffer
-	VkMemoryRequirements memoryRequirements;
-	vkGetBufferMemoryRequirements(device, vertexBuffer, &memoryRequirements);
-	
-	// determine the best type of memory to allocate based on the requirements
-	VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
-	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &physicalDeviceMemoryProperties);
-	bool bFoundMemoryType = false;
-	VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	uint32_t memoryTypeIndex;
-	for (uint32_t i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; i++)
-	{
-		if ((memoryRequirements.memoryTypeBits & (1 << i)) && (physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
-		{
-			memoryTypeIndex = i;
-			bFoundMemoryType = true;
-			break;
-		}
-	}
-	if (!bFoundMemoryType)
-	{
-		throw std::runtime_error("ERROR: failed to find suitable memory type for vertex buffer!");
-	}
-
-	// create memory allocate info
-	VkMemoryAllocateInfo memoryAllocateInfo{};
-	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	memoryAllocateInfo.allocationSize = memoryRequirements.size;
-	memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
-
-	// create vertex buffer device memory
-	if (vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &vertexBufferDeviceMemory) != VK_SUCCESS)
-	{
-		throw std::runtime_error("ERROR: 'vkAllocateMemory' failed to create device memory for vertex buffer!");
-	}
-
-	// bind the allocated memory with the vertex buffer
-	vkBindBufferMemory(device, vertexBuffer, vertexBufferDeviceMemory, 0);
+	// create a host-visible staging buffer as a temporary buffer for mapping
+	// and copying the vertex data; buffer can be used as source in a memory 
+	// transfer operation
+	VkDeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
+	VkBuffer stagingBuffer;
+	VkDeviceMemory stagingBufferDeviceMemory;
+	createBuffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferDeviceMemory);
 
 	// copy the vertex data to the buffer
 	void* data;
-	vkMapMemory(device, vertexBufferDeviceMemory, 0, bufferCreateInfo.size, 0, &data);
-	memcpy(data, vertices.data(), (size_t)bufferCreateInfo.size);
-	vkUnmapMemory(device, vertexBufferDeviceMemory);
+	vkMapMemory(device, stagingBufferDeviceMemory, 0, vertexBufferSize, 0, &data);
+	memcpy(data, vertices.data(), (size_t)vertexBufferSize);
+	vkUnmapMemory(device, stagingBufferDeviceMemory);
 
+	// create a vertex buffer; buffer can be used as destination in a memory
+	// transfer operation
+	createBuffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferDeviceMemory);
+
+	// use a command buffer to execute memory transfer operations 
+	VkCommandBufferAllocateInfo copyCommandBufferAllocateInfo{};
+	copyCommandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	copyCommandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+	// could create your own command pool with VK_COMMAND_POOL_CREATE_TRANSIENT_BIT
+	copyCommandBufferAllocateInfo.commandPool = commandPool;
+	copyCommandBufferAllocateInfo.commandBufferCount = 1;
+
+	VkCommandBuffer copyCommandBuffer;
+	vkAllocateCommandBuffers(device, &copyCommandBufferAllocateInfo, &copyCommandBuffer);
+
+	// start recording command buffer
+	VkCommandBufferBeginInfo copyCommandBufferBeginInfo{};
+	copyCommandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	copyCommandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkBeginCommandBuffer(copyCommandBuffer, &copyCommandBufferBeginInfo);
+
+	// use the copy buffer command to copy the staging buffer into the vertex
+	// buffer
+	VkBufferCopy bufferCopyRegion{};
+	bufferCopyRegion.srcOffset = 0; // optional
+	bufferCopyRegion.dstOffset = 0; // optional
+	bufferCopyRegion.size = vertexBufferSize;
+	vkCmdCopyBuffer(copyCommandBuffer, stagingBuffer, vertexBuffer, 1, &bufferCopyRegion);
+
+	// stop recording command buffer
+	vkEndCommandBuffer(copyCommandBuffer);
+
+	// execute the copy command buffer by submitting it to the graphics queue
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &copyCommandBuffer;
+	vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+
+	// cleanup the command buffer and staging buffer
+	vkQueueWaitIdle(graphicsQueue);
+	vkFreeCommandBuffers(device, commandPool, 1, &copyCommandBuffer);
+	vkDestroyBuffer(device, stagingBuffer, nullptr);
+	vkFreeMemory(device, stagingBufferDeviceMemory, nullptr);
 
 	// create a semaphore (GPU synchronization object) for each frame in flight
 	// to signal when an image has been aquired from the swapchain and is ready

@@ -67,6 +67,8 @@ private:
 
 	void recreateSwapchain();
 
+	void createBuffer(VkDeviceSize deviceSize, VkBufferUsageFlags bufferUsageFlags, VkMemoryPropertyFlags memoryPropertyFlags, VkBuffer& buffer, VkDeviceMemory& bufferDeviceMemory);
+
 public:
 	bool bFramebufferResized = false;
 
