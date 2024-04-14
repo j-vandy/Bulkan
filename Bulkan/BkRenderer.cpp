@@ -36,10 +36,16 @@ struct Vertex {
 		return attributeDescriptions;
 	}
 };
+// attributes are per vertex variables
+// uniforms are global variables
 const std::vector<Vertex> vertices = { // interleaving vertex attributes
-	{{0.0f, -0.5f}, {1.0f,0.0f,0.0f}},
-	{{0.5f, 0.5f}, {0.0f,1.0f,0.0f}},
-	{{-0.5f, 0.5f}, {0.0f,0.0f,1.0f}}
+	{{-0.5f, -0.5f}, {1.0f,0.0f,0.0f}},
+	{{0.5f, -0.5f}, {0.0f,1.0f,0.0f}},
+	{{0.5f, 0.5f}, {0.0f,0.0f,1.0f}},
+	{{-0.5f, 0.5f}, {1.0f,1.0f,1.0f}}
+};
+const std::vector<uint16_t> indices = {
+	0, 1, 2, 2, 3, 0
 };
 
 #ifdef NDEBUG
@@ -404,10 +410,6 @@ void BkRenderer::createBuffer(VkDeviceSize deviceSize, VkBufferUsageFlags buffer
 	memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
 
 	// create buffer device memory
-	// IMPORTANT SIDE NOTE: real world applications dont call vkAllocateMemory
-	// for every individual buffer, instead create a custom allocator that
-	// splits up a single allocation among many different objects by using the
-	// 'offset' parameter.
 	if (vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &bufferDeviceMemory) != VK_SUCCESS)
 	{
 		throw std::runtime_error("ERROR: 'vkAllocateMemory' failed to create device memory for vertex buffer!");
@@ -415,6 +417,48 @@ void BkRenderer::createBuffer(VkDeviceSize deviceSize, VkBufferUsageFlags buffer
 
 	// bind the allocated memory with the vertex buffer
 	vkBindBufferMemory(device, buffer, bufferDeviceMemory, 0);
+}
+
+void BkRenderer::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize)
+{
+	// create a command buffer to execute memory transfer operations 
+	VkCommandBufferAllocateInfo commandBufferAllocateInfo{};
+	commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+	// TODO: could create your own command pool with VK_COMMAND_POOL_CREATE_TRANSIENT_BIT
+	commandBufferAllocateInfo.commandPool = commandPool;
+	commandBufferAllocateInfo.commandBufferCount = 1;
+
+	VkCommandBuffer commandBuffer;
+	vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffer);
+
+	// start recording command buffer
+	VkCommandBufferBeginInfo commandBufferBeginInfo{};
+	commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+
+	// use the copy buffer command to copy the src buffer into the dst buffer
+	VkBufferCopy bufferCopyRegion{};
+	bufferCopyRegion.srcOffset = 0; // optional
+	bufferCopyRegion.dstOffset = 0; // optional
+	bufferCopyRegion.size = deviceSize;
+	vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &bufferCopyRegion);
+
+	// stop recording command buffer
+	vkEndCommandBuffer(commandBuffer);
+
+	// execute the copy command buffer by submitting it to the graphics queue
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+	vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+
+	// cleanup the command buffer
+	vkQueueWaitIdle(graphicsQueue);
+	vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
 BkRenderer::BkRenderer()
@@ -933,65 +977,57 @@ BkRenderer::BkRenderer()
 		}
 	}
 
+	// TODO: real world applications dont call vkAllocateMemory for every 
+	// individual buffer, instead create a custom allocator that splits up a 
+	// single allocation among many different objects by using the 'offset'
+	// parameter. vkAllocateMemory is called in createBuffer
+
 	// create a host-visible staging buffer as a temporary buffer for mapping
-	// and copying the vertex data; buffer can be used as source in a memory 
+	// and copying the vertex data; buffer will be used as src in a memory 
 	// transfer operation
 	VkDeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
-	VkBuffer stagingBuffer;
-	VkDeviceMemory stagingBufferDeviceMemory;
-	createBuffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferDeviceMemory);
+	VkBuffer vertStagingBuffer;
+	VkDeviceMemory vertStagingBufferDeviceMemory;
+	createBuffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, vertStagingBuffer, vertStagingBufferDeviceMemory);
 
-	// copy the vertex data to the buffer
-	void* data;
-	vkMapMemory(device, stagingBufferDeviceMemory, 0, vertexBufferSize, 0, &data);
-	memcpy(data, vertices.data(), (size_t)vertexBufferSize);
-	vkUnmapMemory(device, stagingBufferDeviceMemory);
+	// copy the vertex data to the staging buffer
+	void* vertData;
+	vkMapMemory(device, vertStagingBufferDeviceMemory, 0, vertexBufferSize, 0, &vertData);
+	memcpy(vertData, vertices.data(), (size_t)vertexBufferSize);
+	vkUnmapMemory(device, vertStagingBufferDeviceMemory);
 
 	// create a vertex buffer; buffer can be used as destination in a memory
 	// transfer operation
 	createBuffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferDeviceMemory);
 
-	// use a command buffer to execute memory transfer operations 
-	VkCommandBufferAllocateInfo copyCommandBufferAllocateInfo{};
-	copyCommandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	copyCommandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	// create a command buffer to copy staging buffer(src) into vertex buffer (dst)
+	copyBuffer(vertStagingBuffer, vertexBuffer, vertexBufferSize);
 
-	// could create your own command pool with VK_COMMAND_POOL_CREATE_TRANSIENT_BIT
-	copyCommandBufferAllocateInfo.commandPool = commandPool;
-	copyCommandBufferAllocateInfo.commandBufferCount = 1;
+	// cleanup resources
+	vkDestroyBuffer(device, vertStagingBuffer, nullptr);
+	vkFreeMemory(device, vertStagingBufferDeviceMemory, nullptr);
 
-	VkCommandBuffer copyCommandBuffer;
-	vkAllocateCommandBuffers(device, &copyCommandBufferAllocateInfo, &copyCommandBuffer);
+	// staging buffer as a temporary buffer for mapping/copying the index data
+	VkDeviceSize indexBufferSize = sizeof(indices[0]) * indices.size();
+	VkBuffer indexStagingBuffer;
+	VkDeviceMemory indexStagingBufferDeviceMemory;
+	createBuffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, indexStagingBuffer, indexStagingBufferDeviceMemory);
 
-	// start recording command buffer
-	VkCommandBufferBeginInfo copyCommandBufferBeginInfo{};
-	copyCommandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	copyCommandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	vkBeginCommandBuffer(copyCommandBuffer, &copyCommandBufferBeginInfo);
+	// copy the index data to the staging buffer
+	void* indexData;
+	vkMapMemory(device, indexStagingBufferDeviceMemory, 0, indexBufferSize, 0, &indexData);
+	memcpy(indexData, indices.data(), (size_t)indexBufferSize);
+	vkUnmapMemory(device, indexStagingBufferDeviceMemory);
 
-	// use the copy buffer command to copy the staging buffer into the vertex
-	// buffer
-	VkBufferCopy bufferCopyRegion{};
-	bufferCopyRegion.srcOffset = 0; // optional
-	bufferCopyRegion.dstOffset = 0; // optional
-	bufferCopyRegion.size = vertexBufferSize;
-	vkCmdCopyBuffer(copyCommandBuffer, stagingBuffer, vertexBuffer, 1, &bufferCopyRegion);
+	// create an index buffer
+	createBuffer(indexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferDeviceMemory);
 
-	// stop recording command buffer
-	vkEndCommandBuffer(copyCommandBuffer);
+	// create a command buffer to copy staging buffer(src) into index buffer (dst)
+	copyBuffer(indexStagingBuffer, indexBuffer, indexBufferSize);
 
-	// execute the copy command buffer by submitting it to the graphics queue
-	VkSubmitInfo submitInfo{};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &copyCommandBuffer;
-	vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-
-	// cleanup the command buffer and staging buffer
-	vkQueueWaitIdle(graphicsQueue);
-	vkFreeCommandBuffers(device, commandPool, 1, &copyCommandBuffer);
-	vkDestroyBuffer(device, stagingBuffer, nullptr);
-	vkFreeMemory(device, stagingBufferDeviceMemory, nullptr);
+	// cleanup resources
+	vkDestroyBuffer(device, indexStagingBuffer, nullptr);
+	vkFreeMemory(device, indexStagingBufferDeviceMemory, nullptr);
 
 	// create a semaphore (GPU synchronization object) for each frame in flight
 	// to signal when an image has been aquired from the swapchain and is ready
@@ -1110,8 +1146,11 @@ void BkRenderer::render()
 		VkDeviceSize offsets[] = { 0 };
 		vkCmdBindVertexBuffers(commandBuffers[currentFrame], 0, 1, vertexBuffers, offsets);
 
+		// bind the index buffer
+		vkCmdBindIndexBuffer(commandBuffers[currentFrame], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
 		// draw and end commands
-		vkCmdDraw(commandBuffers[currentFrame], 3, 1, 0, 0);
+		vkCmdDrawIndexed(commandBuffers[currentFrame], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 		vkCmdEndRenderPass(commandBuffers[currentFrame]);
 		if (vkEndCommandBuffer(commandBuffers[currentFrame]) != VK_SUCCESS)
 		{
@@ -1174,6 +1213,8 @@ void BkRenderer::render()
 		vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
 		vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
 	}
+	vkDestroyBuffer(device, indexBuffer, nullptr);
+	vkFreeMemory(device, indexBufferDeviceMemory, nullptr);
 	vkDestroyBuffer(device, vertexBuffer, nullptr);
 	vkFreeMemory(device, vertexBufferDeviceMemory, nullptr);
 	vkDestroyCommandPool(device, commandPool, nullptr);

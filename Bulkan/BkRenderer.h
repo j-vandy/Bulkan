@@ -51,6 +51,8 @@ private:
 
 	VkBuffer vertexBuffer;
 	VkDeviceMemory vertexBufferDeviceMemory;
+	VkBuffer indexBuffer;
+	VkDeviceMemory indexBufferDeviceMemory;
 
 	std::vector<VkSemaphore> imageAvailableSemaphores;
 	std::vector<VkSemaphore> renderFinishedSemaphores;
@@ -68,6 +70,8 @@ private:
 	void recreateSwapchain();
 
 	void createBuffer(VkDeviceSize deviceSize, VkBufferUsageFlags bufferUsageFlags, VkMemoryPropertyFlags memoryPropertyFlags, VkBuffer& buffer, VkDeviceMemory& bufferDeviceMemory);
+
+	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize);
 
 public:
 	bool bFramebufferResized = false;
