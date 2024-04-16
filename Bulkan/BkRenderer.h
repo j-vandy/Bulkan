@@ -41,7 +41,9 @@ private:
 	std::vector<VkImageView> swapchainImageViews;
 
 	VkRenderPass renderPass;
+
 	VkDescriptorSetLayout descriptorSetLayout;
+
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 
@@ -49,6 +51,11 @@ private:
 
 	VkCommandPool commandPool;
 	std::vector<VkCommandBuffer> commandBuffers;
+
+	VkImage textureImage;
+	VkDeviceMemory textureImageDeviceMemory;
+	VkImageView textureImageView;
+	VkSampler textureSampler;
 
 	VkBuffer vertexBuffer;
 	VkDeviceMemory vertexBufferDeviceMemory;
@@ -76,6 +83,14 @@ private:
 	void cleanupSwapchain();
 
 	void recreateSwapchain();
+
+	void beginSingleTimeCommands(VkCommandBuffer& commandBuffer);
+
+	void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+
+	void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling imageTiling, VkImageUsageFlags imageUsageFlags, VkMemoryPropertyFlags memoryPropertyFlags, VkImage& image, VkDeviceMemory& imageDeviceMemory);
+
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
 
 	void createBuffer(VkDeviceSize deviceSize, VkBufferUsageFlags bufferUsageFlags, VkMemoryPropertyFlags memoryPropertyFlags, VkBuffer& buffer, VkDeviceMemory& bufferDeviceMemory);
 
