@@ -5,9 +5,6 @@
 #include <set>
 #include <algorithm>
 
-#include <glm/glm.hpp>
-#include <array>
-
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #include <glm/gtc/matrix_transform.hpp>
@@ -18,58 +15,10 @@
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
-struct Vertex {
-	glm::vec3 pos;
-	glm::vec3 color;
-	glm::vec2 texCoord;
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
+#include <unordered_map>
 
-	// tell vulkan how to pass the data format to the vertex shader once
-	// in GPU memory
-	static VkVertexInputBindingDescription getVertexInputBindingDescription()
-	{
-		VkVertexInputBindingDescription bindingDescription{};
-		bindingDescription.binding = 0;
-		bindingDescription.stride = sizeof(Vertex);
-		bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-		return bindingDescription;
-	}
-
-	static std::array<VkVertexInputAttributeDescription, 3> getVertexInputAttributeDescriptions() {
-		std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
-		attributeDescriptions[0].binding = 0;
-		attributeDescriptions[0].location = 0;
-		attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attributeDescriptions[0].offset = offsetof(Vertex, pos);
-		
-		attributeDescriptions[1].binding = 0;
-		attributeDescriptions[1].location = 1;
-		attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-		attributeDescriptions[2].binding = 0;
-		attributeDescriptions[2].location = 2;
-		attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-		attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
-		return attributeDescriptions;
-	}
-};
-// attributes are per vertex variables
-// uniforms are global variables
-const std::vector<Vertex> vertices = { // interleaving vertex attributes
-	{{-0.5f, -0.5f, 0.0f}, {1.0f,0.0f,0.0f}, {1.0f, 0.0f}},
-	{{0.5f, -0.5f, 0.0f}, {0.0f,1.0f,0.0f}, {0.0f, 0.0f}},
-	{{0.5f, 0.5f, 0.0f}, {0.0f,0.0f,1.0f}, {0.0f, 1.0f}},
-	{{-0.5f, 0.5f, 0.0f}, {1.0f,1.0f,1.0f}, {1.0f, 1.0f}},
-
-	{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-	{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-	{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-	{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-};
-const std::vector<uint16_t> indices = {
-	0, 1, 2, 2, 3, 0,
-	4, 5, 6, 6, 7, 4
-};
 
 struct UniformBufferObject {
 	glm::mat4 model;
@@ -1222,7 +1171,7 @@ BkRenderer::BkRenderer()
 
 	// create texture image
 	int texWidth, texHeight, texChannels;
-	stbi_uc* pixels = stbi_load("textures/brick.png", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+	stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 	VkDeviceSize texDeviceSize = texWidth * texHeight * 4;
 	if (!pixels)
 	{
@@ -1316,6 +1265,45 @@ BkRenderer::BkRenderer()
 	// individual buffer, instead create a custom allocator that splits up a 
 	// single allocation among many different objects by using the 'offset'
 	// parameter. vkAllocateMemory is called in createBuffer
+
+	// load model data
+	tinyobj::attrib_t attrib;
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
+	std::string warn, err;
+
+	if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str()))
+	{
+		throw std::runtime_error(warn + err);
+	}
+
+	std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+	for (const auto& shape : shapes) {
+		for (const auto& index : shape.mesh.indices) {
+			Vertex vertex{};
+
+			vertex.pos = {
+				attrib.vertices[3 * index.vertex_index + 0],
+				attrib.vertices[3 * index.vertex_index + 1],
+				attrib.vertices[3 * index.vertex_index + 2]
+			};
+
+			vertex.texCoord = {
+				attrib.texcoords[2 * index.texcoord_index + 0],
+				1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+			};
+
+			vertex.color = { 1.0f, 1.0f, 1.0f };
+
+			if (uniqueVertices.count(vertex) == 0)
+			{
+				uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+				vertices.push_back(vertex);
+			}
+
+			indices.push_back(uniqueVertices[vertex]);
+		}
+	}
 
 	// create a host-visible staging buffer as a temporary buffer for mapping
 	// and copying the vertex data; buffer will be used as src in a memory 
@@ -1581,7 +1569,7 @@ void BkRenderer::render()
 		vkCmdBindVertexBuffers(commandBuffers[currentFrame], 0, 1, vertexBuffers, offsets);
 
 		// bind the index buffer
-		vkCmdBindIndexBuffer(commandBuffers[currentFrame], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+		vkCmdBindIndexBuffer(commandBuffers[currentFrame], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 		// bind the correct descriptor set to access the uniform buffer object
 		vkCmdBindDescriptorSets(commandBuffers[currentFrame], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);

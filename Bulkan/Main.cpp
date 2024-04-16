@@ -1,4 +1,4 @@
-#include "BkRenderer.h";
+#include "BkRenderer.h"
 #include <iostream>
 #include <cstdlib>
 
