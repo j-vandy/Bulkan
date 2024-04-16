@@ -52,6 +52,10 @@ private:
 	VkCommandPool commandPool;
 	std::vector<VkCommandBuffer> commandBuffers;
 
+	VkImage depthImage;
+	VkDeviceMemory depthImageDeviceMemory;
+	VkImageView depthImageView;
+
 	VkImage textureImage;
 	VkDeviceMemory textureImageDeviceMemory;
 	VkImageView textureImageView;
@@ -78,6 +82,8 @@ private:
 
 	void createSwapchainAndImageViews(std::optional<uint32_t>& graphicsQueueFamilyIndex, std::optional<uint32_t>& presentQueueFamilyIndex);
 
+	void createDepthResources(VkFormat& depthFormat);
+
 	void createSwapchainFramebuffer();
 
 	void cleanupSwapchain();
@@ -89,6 +95,8 @@ private:
 	void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 
 	void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling imageTiling, VkImageUsageFlags imageUsageFlags, VkMemoryPropertyFlags memoryPropertyFlags, VkImage& image, VkDeviceMemory& imageDeviceMemory);
+	
+	void createImageView(VkImage image, VkFormat format, VkImageAspectFlags imageAspectFlags, VkImageView& imageView);
 
 	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
 
