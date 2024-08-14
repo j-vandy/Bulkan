@@ -61,11 +61,6 @@ namespace std {
 class BkRenderer
 {
 private:
-	const char* GLFW_WINDOW_TITLE = "Bulkan";
-	const int GLFW_WINDOW_WIDTH = 800;
-	const int GLFW_WINDOW_HEIGHT = 600;
-	const char* APPLICATION_NAME = "Hello Triangle";
-	const char* ENGINE_NAME = "No Engine";
 	const int MAX_FRAMES_IN_FLIGHT = 2;
 	// validation layers for basic error checking
 	const std::vector<const char*> validationLayers = {
@@ -166,10 +161,7 @@ private:
 public:
 	bool bFramebufferResized = false;
 
-	// TODO: probably need to allow title, width, height, application name
-	// TODO: add good comments for BkRenderer and render method
 	BkRenderer();
-
 	void render();
 };
 

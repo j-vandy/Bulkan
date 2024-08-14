@@ -1,37 +1,67 @@
 cmake_minimum_required(VERSION 3.5.0)
 project(Bulkan VERSION 0.1.0 LANGUAGES C CXX)
 
-add_executable(Bulkan main.cpp)
+set(TRIPLET "x64-windows")
 
-# COMPILE SHADERS
-set(SHADER_DIR "${CMAKE_SOURCE_DIR}/shaders")
-set(SHADER_BIN_DIR "${CMAKE_SOURCE_DIR}/shaders/bin")
-set(GLSLC "C:/VulkanSDK/1.3.275.0/Bin/glslc.exe")
+# Initialize vcpkg
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/vcpkg_installed")
+    message(STATUS "vcpkg_installed directory not found. Running vcpkg install...")
+    execute_process(
+        COMMAND vcpkg install
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        RESULT_VARIABLE VCPKG_INSTALL_RESULT
+    )
+endif()
+set(CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/vcpkg_installed/${TRIPLET}/share")
 
-file(GLOB_RECURSE SHADER_FILES
-    "shaders/*.frag"
-    "shaders/*.vert"
+# Find Packages
+find_package(glfw3 CONFIG REQUIRED)
+find_package(Vulkan REQUIRED)
+
+add_executable(Bulkan src/main.cpp)
+
+# Link Libraries
+target_link_libraries(Bulkan PRIVATE glfw)
+target_link_libraries(Bulkan PRIVATE Vulkan::Vulkan)
+
+# Copy DLLs
+set(PATH_TO_DLLS "${CMAKE_SOURCE_DIR}/vcpkg_installed/${TRIPLET}/bin")
+add_custom_command(
+    TARGET Bulkan POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${PATH_TO_DLLS}"
+    $<TARGET_FILE_DIR:Bulkan>
 )
 
-foreach(GLSL ${SHADER_FILES})
-    get_filename_component(FILE_NAME ${GLSL} NAME)
-    set(SPIRV "${SHADER_BIN_DIR}/${FILE_NAME}.spv")
-    add_custom_command(
-        OUTPUT ${SPIRV}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_BIN_DIR}
-        COMMAND ${GLSLC} ${GLSL} -o ${SPIRV}
-        DEPENDS ${GLSL}
-    )
-    list(APPEND SPIRV_BINARY_FILES ${SPIRV})
-endforeach(GLSL)
-
+# Compile Shaders
+set(SHADER_DIR "${CMAKE_SOURCE_DIR}/src/shaders")
+set(SHADER_BIN_DIR "${CMAKE_BINARY_DIR}/shaders")
+set(GLSLC "C:/VulkanSDK/1.3.275.0/Bin/glslc.exe")
+set(SHADER_FRAG "${SHADER_DIR}/shader.frag")
+set(SPIRV_FRAG "${SHADER_BIN_DIR}/frag.spv")
+add_custom_command(
+    OUTPUT ${SPIRV_FRAG}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_BIN_DIR}
+    COMMAND ${GLSLC} ${SHADER_FRAG} -o ${SPIRV_FRAG}
+    DEPENDS ${SHADER_FRAG}
+    COMMENT "Compiling shader.frag..."
+)
+set(SHADER_VERT "${SHADER_DIR}/shader.vert")
+set(SPIRV_VERT "${SHADER_BIN_DIR}/vert.spv")
+add_custom_command(
+    OUTPUT ${SPIRV_VERT}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_BIN_DIR}
+    COMMAND ${GLSLC} ${SHADER_VERT} -o ${SPIRV_VERT}
+    DEPENDS ${SHADER_VERT}
+    COMMENT "Compiling shader.vert..."
+)
 add_custom_target(
     Shaders
-    DEPENDS ${SPIRV_BINARY_FILES}
+    DEPENDS ${SPIRV_FRAG} ${SPIRV_VERT}
 )
-
 add_dependencies(Bulkan Shaders)
 
+# Enable Testing
 include(CTest)
 enable_testing()
 

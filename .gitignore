@@ -1,3 +1,5 @@
-#CMake Build Directories
+# Ignore build output directory
 out/
-shaders/bin/
+
+# Ingore vcpkg installed files
+vcpkg_installed/
