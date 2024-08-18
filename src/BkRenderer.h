@@ -62,35 +62,10 @@ class BkRenderer
 {
 private:
 	const int MAX_FRAMES_IN_FLIGHT = 2;
-	// validation layers for basic error checking
-	const std::vector<const char*> validationLayers = {
-		"VK_LAYER_KHRONOS_validation"
-	};
-	// add swapchain compatability to required physical device extensions
-	const std::vector<const char*> requiredPhysicalDeviceExtensions = {
-		VK_KHR_SWAPCHAIN_EXTENSION_NAME
-	};
 
 	const std::string MODEL_PATH = "models/viking_room.obj";
 	const std::string TEXTURE_PATH = "textures/viking_room.png";
 
-	GLFWwindow* window;
-
-	VkInstance instance;
-	VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
-	VkSurfaceKHR surface;
-
-	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-
-	VkDevice device;
-	VkQueue graphicsQueue;
-	VkQueue presentQueue;
-
-	VkFormat swapchainImageFormat;
-	VkExtent2D swapchainExtent;
-	VkSwapchainKHR swapchain;
-	std::vector<VkImage> swapchainImages;
-	std::vector<VkImageView> swapchainImageViews;
 
 	VkRenderPass renderPass;
 
