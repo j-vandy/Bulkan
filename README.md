@@ -17,12 +17,12 @@ Bulkan is a user-friendly real-time physically based 3D rendering library that s
     ```
 
 - **Add MinGW-w64 to the Path:**
-  1. Open **Windows Settings**.
-  2. Search for **Edit the system environment variables** and select it.
-  3. In the System Properties window, click on **Environment Variables**.
-  4. Under **User variables**, select the `Path` variable and click **Edit**.
-  5. Click **New** and add the MinGW-w64 `bin` folder path (e.g., `C:\msys64\ucrt64\bin` if you used the default installation directory).
-  6. Click **OK** to close all dialog boxes.
+  - Open **Windows Settings**.
+  - Search for **Edit the system environment variables** and select it.
+  - In the System Properties window, click on **Environment Variables**.
+  - Under **User variables**, select the `Path` variable and click **Edit**.
+  - Click **New** and add the MinGW-w64 `bin` folder path (e.g., `C:\msys64\ucrt64\bin` if you used the default installation directory).
+  - Click **OK** to close all dialog boxes.
 
 ### 2. Install CMake
 
@@ -33,8 +33,8 @@ Bulkan is a user-friendly real-time physically based 3D rendering library that s
 ### 3. Install and Configure vcpkg
 
 - **Clone and Bootstrap vcpkg:**
-  1. Open a terminal (Command Prompt, PowerShell, or MSYS2 terminal).
-  2. Navigate to your desired installation directory and run the following commands:
+  - Open a terminal (Command Prompt, PowerShell, or MSYS2 terminal).
+  - Navigate to your desired installation directory and run the following commands:
      ```
      git clone https://github.com/microsoft/vcpkg.git
      cd vcpkg
@@ -42,15 +42,15 @@ Bulkan is a user-friendly real-time physically based 3D rendering library that s
      ```
 
 - **Set Up `VCPKG_ROOT` Environment Variable:**
-  1. Open **Windows Settings**.
-  2. Search for **Edit the system environment variables** and select it.
-  3. In the System Properties window, click on **Environment Variables**.
-  4. Under **User variables**, click **New** to create a new environment variable.
-  5. For **Variable name**, enter `VCPKG_ROOT`.
-  6. For **Variable value**, enter the path to your vcpkg installation (e.g., `C:\path\to\vcpkg`).
-  7. Click **OK** to save the new variable.
+  - Open **Windows Settings**.
+  - Search for **Edit the system environment variables** and select it.
+  - In the System Properties window, click on **Environment Variables**.
+  - Under **User variables**, click **New** to create a new environment variable.
+  - For **Variable name**, enter `VCPKG_ROOT`.
+  - For **Variable value**, enter the path to your vcpkg installation (e.g., `C:\path\to\vcpkg`).
+  - Click **OK** to save the new variable.
 
 - **Add vcpkg to the Path:**
-  1. Under **User variables**, select the `Path` variable and click **Edit**.
-  2. Click **New** and add `%VCPKG_ROOT%`.
-  3. Click **OK** to close all dialog boxes.
+  - Under **User variables**, select the `Path` variable and click **Edit**.
+  - Click **New** and add `%VCPKG_ROOT%`.
+  - Click **OK** to close all dialog boxes.
